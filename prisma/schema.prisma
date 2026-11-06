@@ -1,0 +1,425 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum UserRole {
+  CUSTOMER
+  SUPER_ADMIN
+  INVENTORY_MANAGER
+  SALES_MANAGER
+  FINANCE_OFFICER
+  LOGISTICS_MANAGER
+}
+
+enum VehicleCondition {
+  NEW
+  USED
+}
+
+enum VehicleAvailability {
+  PENDING_VERIFICATION
+  AVAILABLE
+  RESERVED
+  SOLD
+  ARCHIVED
+}
+
+enum EnquiryStatus {
+  RECEIVED
+  SOURCING
+  QUOTED
+  CLOSED
+}
+
+enum QuoteStatus {
+  DRAFT
+  SENT
+  APPROVED
+  REJECTED
+  EXPIRED
+  INVOICED
+}
+
+enum OrderStatus {
+  ENQUIRY_RECEIVED
+  SOURCING_IN_PROGRESS
+  QUOTATION_PREPARED
+  AWAITING_CUSTOMER_APPROVAL
+  AWAITING_PAYMENT
+  PAYMENT_VERIFIED
+  VEHICLE_INSPECTION
+  EXPORT_DOCUMENTATION
+  READY_FOR_SHIPMENT
+  SHIPPED
+  IN_TRANSIT
+  ARRIVED_AT_DESTINATION
+  COMPLETED
+  CANCELLED
+}
+
+enum ShipmentStatus {
+  PLANNED
+  BOOKED
+  DEPARTED
+  IN_TRANSIT
+  ARRIVED
+  DELIVERED
+  DELAYED
+}
+
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  PAID
+  VOID
+}
+
+enum PaymentStatus {
+  PENDING
+  VERIFIED
+  FAILED
+  REFUNDED
+}
+
+model User {
+  id                 String              @id @default(cuid())
+  email              String              @unique
+  name               String
+  phone              String?
+  passwordHash       String
+  role               UserRole            @default(CUSTOMER)
+  emailVerifiedAt    DateTime?
+  isActive           Boolean             @default(true)
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  sessions           Session[]
+  verificationTokens VerificationToken[]
+  savedVehicles      SavedVehicle[]
+  enquiries          Enquiry[]
+  quotes             Quote[]
+  orders             Order[]
+  auditLogs          AuditLog[]          @relation("AuditActor")
+  notifications      Notification[]
+  verifiedPayments   Payment[]           @relation("PaymentVerifier")
+  approvedDiscounts  Discount[]          @relation("DiscountApprover")
+
+  @@index([role, createdAt])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@index([expiresAt])
+}
+
+model VerificationToken {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  purpose   String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, purpose])
+  @@index([expiresAt])
+}
+
+model Manufacturer {
+  id        String     @id @default(cuid())
+  name      String     @unique
+  slug      String     @unique
+  createdAt DateTime   @default(now())
+  vehicles  Vehicle[]
+  discounts Discount[]
+}
+
+model Supplier {
+  id          String    @id @default(cuid())
+  name        String
+  country     String    @default("China")
+  contactName String?
+  email       String?
+  phone       String?
+  notes       String?
+  active      Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  vehicles    Vehicle[]
+
+  @@index([name])
+}
+
+model Vehicle {
+  id                 String              @id @default(cuid())
+  stockReference     String              @unique
+  manufacturerId     String
+  supplierId         String?
+  model              String
+  trim               String?
+  year               Int
+  condition          VehicleCondition
+  mileageKm          Int                 @default(0)
+  batteryKwh         Decimal?            @db.Decimal(8, 2)
+  rangeKm            Int?
+  chargingSpec       String?
+  driveConfiguration String?
+  transmission       String?
+  exteriorColour     String?
+  interiorColour     String?
+  vin                String?
+  description        String
+  bodyType           String
+  currency           String              @default("USD")
+  exportPrice        Decimal             @db.Decimal(12, 2)
+  availability       VehicleAvailability @default(PENDING_VERIFICATION)
+  verifiedAt         DateTime?
+  publishedAt        DateTime?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  manufacturer       Manufacturer        @relation(fields: [manufacturerId], references: [id], onDelete: Restrict)
+  supplier           Supplier?           @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  images             VehicleImage[]
+  savedBy            SavedVehicle[]
+  enquiries          Enquiry[]
+  quotes             Quote[]
+  discounts          Discount[]
+
+  @@index([availability, publishedAt])
+  @@index([manufacturerId, year])
+  @@index([bodyType, condition])
+  @@index([exportPrice])
+  @@index([rangeKm])
+}
+
+model VehicleImage {
+  id        String   @id @default(cuid())
+  vehicleId String
+  url       String
+  alt       String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  vehicle   Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  @@index([vehicleId, sortOrder])
+}
+
+model SavedVehicle {
+  userId    String
+  vehicleId String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  vehicle   Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, vehicleId])
+}
+
+model Enquiry {
+  id           String        @id @default(cuid())
+  userId       String?
+  vehicleId    String?
+  name         String
+  email        String
+  country      String
+  cityOrPort   String?
+  vehicleBrief String
+  budget       String?
+  quantity     Int           @default(1)
+  notes        String?
+  status       EnquiryStatus @default(RECEIVED)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  user         User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  vehicle      Vehicle?      @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+  quotes       Quote[]
+
+  @@index([status, createdAt])
+  @@index([email, createdAt])
+  @@index([userId, createdAt])
+}
+
+model Discount {
+  id             String        @id @default(cuid())
+  name           String
+  code           String?       @unique
+  kind           String
+  value          Decimal       @db.Decimal(12, 2)
+  currency       String?
+  active         Boolean       @default(false)
+  approvedById   String?
+  startsAt       DateTime?
+  expiresAt      DateTime?
+  maxUses        Int?
+  uses           Int           @default(0)
+  vehicleId      String?
+  manufacturerId String?
+  createdAt      DateTime      @default(now())
+  vehicle        Vehicle?      @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+  manufacturer   Manufacturer? @relation(fields: [manufacturerId], references: [id], onDelete: SetNull)
+  approvedBy     User?         @relation("DiscountApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+
+  @@index([active, startsAt, expiresAt])
+}
+
+model Quote {
+  id              String      @id @default(cuid())
+  number          String      @unique
+  customerId      String?
+  enquiryId       String?
+  vehicleId       String?
+  status          QuoteStatus @default(DRAFT)
+  customerName    String
+  customerEmail   String
+  destination     String
+  destinationPort String?
+  currency        String
+  vehicleSnapshot Json
+  priceSnapshot   Json
+  vehiclePrice    Decimal     @db.Decimal(12, 2)
+  discountAmount  Decimal     @default(0) @db.Decimal(12, 2)
+  exportCosts     Decimal     @default(0) @db.Decimal(12, 2)
+  freight         Decimal     @default(0) @db.Decimal(12, 2)
+  insurance       Decimal     @default(0) @db.Decimal(12, 2)
+  taxesAndDuties  Decimal     @default(0) @db.Decimal(12, 2)
+  total           Decimal     @db.Decimal(12, 2)
+  validUntil      DateTime?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  customer        User?       @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  enquiry         Enquiry?    @relation(fields: [enquiryId], references: [id], onDelete: SetNull)
+  vehicle         Vehicle?    @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+  invoice         Invoice?
+  orders          Order[]
+
+  @@index([customerId, createdAt])
+  @@index([status, createdAt])
+}
+
+model Invoice {
+  id        String        @id @default(cuid())
+  number    String        @unique
+  quoteId   String        @unique
+  status    InvoiceStatus @default(DRAFT)
+  revision  Int           @default(1)
+  issuedAt  DateTime?
+  createdAt DateTime      @default(now())
+  quote     Quote         @relation(fields: [quoteId], references: [id], onDelete: Restrict)
+
+  @@index([status, createdAt])
+}
+
+model Order {
+  id          String      @id @default(cuid())
+  number      String      @unique
+  customerId  String?
+  quoteId     String?
+  status      OrderStatus @default(ENQUIRY_RECEIVED)
+  destination String
+  notes       String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  customer    User?       @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  quote       Quote?      @relation(fields: [quoteId], references: [id], onDelete: SetNull)
+  shipment    Shipment?
+  payments    Payment[]
+
+  @@index([customerId, createdAt])
+  @@index([status, createdAt])
+}
+
+model Payment {
+  id               String        @id @default(cuid())
+  orderId          String
+  amount           Decimal       @db.Decimal(12, 2)
+  currency         String
+  paymentMethod    String
+  paymentReference String
+  status           PaymentStatus @default(PENDING)
+  notes            String?
+  verifiedById     String?
+  verifiedAt       DateTime?
+  createdAt        DateTime      @default(now())
+  order            Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  verifiedBy       User?         @relation("PaymentVerifier", fields: [verifiedById], references: [id], onDelete: SetNull)
+
+  @@unique([paymentMethod, paymentReference])
+  @@index([orderId, status])
+  @@index([status, createdAt])
+}
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  type      String
+  title     String
+  message   String
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt, createdAt])
+}
+
+model Shipment {
+  id                 String           @id @default(cuid())
+  orderId            String           @unique
+  status             ShipmentStatus   @default(PLANNED)
+  shippingCompany    String?
+  vessel             String?
+  containerNumber    String?
+  departurePort      String?
+  destinationPort    String?
+  estimatedDeparture DateTime?
+  estimatedArrival   DateTime?
+  trackingReference  String?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+  order              Order            @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  updates            ShipmentUpdate[]
+}
+
+model ShipmentUpdate {
+  id         String         @id @default(cuid())
+  shipmentId String
+  status     ShipmentStatus
+  message    String
+  occurredAt DateTime       @default(now())
+  shipment   Shipment       @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+
+  @@index([shipmentId, occurredAt])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  action     String
+  entityType String
+  entityId   String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+  actor      User?    @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([actorId, createdAt])
+  @@index([entityType, entityId, createdAt])
+}
+
+model RateLimit {
+  key    String
+  bucket DateTime
+  count  Int      @default(0)
+
+  @@id([key, bucket])
+  @@index([bucket])
+}
