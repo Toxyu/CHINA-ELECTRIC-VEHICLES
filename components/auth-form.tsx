@@ -29,7 +29,15 @@ export function AuthForm({ mode, token = "" }: { mode: AuthMode; token?: string 
             : { email: values.email, password: values.password };
     try {
       const response = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-      const data = await response.json();
+      const text = await response.text();
+      let data: { error?: string; message?: string; verificationUrl?: string; resetUrl?: string } = {};
+      if (text) {
+        try {
+          data = JSON.parse(text);
+        } catch {
+          data = { error: "The server returned an invalid response. Please try again." };
+        }
+      }
       if (!response.ok) throw new Error(data.error || "Request could not be completed.");
       setMessage(data.message || "Signed in successfully.");
       setVerificationUrl(data.verificationUrl || data.resetUrl || "");
