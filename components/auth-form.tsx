@@ -38,7 +38,14 @@ export function AuthForm({ mode, token = "" }: { mode: AuthMode; token?: string 
           data = { error: "The server returned an invalid response. Please try again." };
         }
       }
-      if (!response.ok) throw new Error(data.error || "Request could not be completed.");
+      if (!response.ok) {
+        const rawError = data.error || "Request could not be completed.";
+        const friendlyError = mode === "register" && /already registered|already exists|already have an account/i.test(rawError)
+          ? "This email already has an account. Please use the Sign in link below."
+          : rawError;
+        console.error("SIGNUP_ERROR", rawError);
+        throw new Error(friendlyError);
+      }
       setMessage(data.message || "Signed in successfully.");
       setVerificationUrl(data.verificationUrl || data.resetUrl || "");
       if (mode === "login") router.push("/account");
