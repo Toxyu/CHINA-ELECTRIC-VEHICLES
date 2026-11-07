@@ -72,11 +72,17 @@ export function AuthForm({ mode, token = "" }: { mode: AuthMode; token?: string 
 
       try {
         const supabase = createClient();
-        const { error } = await supabase.auth.signUp({
+        const { data, error } = await supabase.auth.signUp({
           email: values.email,
           password: values.password,
           options: { data: { full_name: values.name, phone: values.phone } },
         });
+
+        if (data.user && data.user.identities?.length === 0) {
+          setMessage("This email already has an account. Please Sign in.");
+          setBusy(false);
+          return;
+        }
 
         if (error) {
           const normalized = error.message.toLowerCase();
