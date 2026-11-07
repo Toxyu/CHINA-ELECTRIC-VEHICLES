@@ -63,16 +63,51 @@ export function AuthForm({ mode, token = "" }: { mode: AuthMode; token?: string 
       return;
     }
 
-    const endpoint = mode === "register" ? "/api/auth/register"
-      : mode === "forgot" ? "/api/auth/forgot-password"
-        : mode === "reset" ? "/api/auth/reset-password"
-          : mode === "verify" ? "/api/auth/verify"
-            : "/api/auth/login";
-    const payload = mode === "register" ? values
-      : mode === "forgot" ? { email: values.email }
-        : mode === "reset" ? { token, password: values.password }
-          : mode === "verify" ? { token }
-            : { email: values.email, password: values.password };
+    if (mode === "register") {
+      if (values.password.length < 12) {
+        setMessage("Password must be at least 12 characters.");
+        setBusy(false);
+        return;
+      }
+
+      try {
+        const supabase = createClient();
+        const { error } = await supabase.auth.signUp({
+          email: values.email,
+          password: values.password,
+          options: { data: { full_name: values.name, phone: values.phone } },
+        });
+
+        if (error) {
+          const normalized = error.message.toLowerCase();
+          const message = normalized.includes("already registered") || normalized.includes("already exists") || normalized.includes("user already")
+            ? "This email already has an account. Please Sign in."
+            : normalized.includes("password") && (normalized.includes("weak") || normalized.includes("12") || normalized.includes("minimum"))
+              ? "Password must be at least 12 characters."
+              : "Could not create account. Please try again.";
+          setMessage(message);
+          setBusy(false);
+          return;
+        }
+
+        setMessage("Account created. Please check your email to confirm.");
+        setVerificationUrl("");
+      } catch {
+        setMessage("Could not create account. Please try again.");
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+
+    const endpoint = mode === "forgot" ? "/api/auth/forgot-password"
+      : mode === "reset" ? "/api/auth/reset-password"
+        : mode === "verify" ? "/api/auth/verify"
+          : "/api/auth/login";
+    const payload = mode === "forgot" ? { email: values.email }
+      : mode === "reset" ? { token, password: values.password }
+        : mode === "verify" ? { token }
+          : { email: values.email, password: values.password };
     try {
       const response = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       const text = await response.text();
@@ -86,10 +121,7 @@ export function AuthForm({ mode, token = "" }: { mode: AuthMode; token?: string 
       }
       if (!response.ok) {
         const rawError = data.error || "Request could not be completed.";
-        const friendlyError = mode === "register" && /already registered|already exists|already have an account/i.test(rawError)
-          ? "This email already has an account. Please use the Sign in link below."
-          : rawError;
-        console.error("SIGNUP_ERROR", rawError);
+        const friendlyError = rawError;
         throw new Error(friendlyError);
       }
       setMessage(data.message || "Signed in successfully.");
