@@ -79,7 +79,7 @@ export function AuthForm({ mode, token = "" }: { mode: AuthMode; token?: string 
       : mode === "forgot" ? "/api/auth/forgot-password"
         : mode === "reset" ? "/api/auth/reset-password"
           : mode === "verify" ? "/api/auth/verify"
-            : mode === "admin" ? "/api/auth/admin-login" : "/api/auth/login";
+            : "/api/auth/login";
     const payload = mode === "register" ? values
       : mode === "forgot" ? { email: values.email }
         : mode === "reset" ? { token, password: values.password }
@@ -107,7 +107,6 @@ export function AuthForm({ mode, token = "" }: { mode: AuthMode; token?: string 
       setMessage(data.message || "Signed in successfully.");
       setVerificationUrl(data.verificationUrl || data.resetUrl || "");
       if (mode === "login") router.push("/account");
-      if (mode === "admin") router.push("/admin/dashboard");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Request could not be completed.");
     } finally {
