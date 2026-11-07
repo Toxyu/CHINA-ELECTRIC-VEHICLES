@@ -79,9 +79,9 @@ export async function POST(req: Request) {
     safeMessages.push({ role: message.role, content: message.content });
   }
 
-  const key = process.env.OPENAI_API_KEY;
+  const key = process.env.GROQ_API_KEY;
   if (!key) {
-    return NextResponse.json({ reply: "The AI assistant is in preview mode because the site owner has not added an AI API key yet. I can still help you prepare: what country are you importing to, and what is your approximate budget? You can also send an enquiry through the website form." });
+    return NextResponse.json({ reply: "The AI assistant is temporarily unavailable because its service connection is not configured. I can still help you prepare: what country are you importing to, and what is your approximate budget? You can also send an enquiry through the website form." });
   }
 
   const latestQuestion = safeMessages.filter((message) => message.role === "user").at(-1)?.content || "";
@@ -127,11 +127,11 @@ export async function POST(req: Request) {
 
   let upstream: Response;
   try {
-    upstream = await fetch("https://api.openai.com/v1/chat/completions", {
+    upstream = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
       body: JSON.stringify({
-        model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+        model: process.env.GROQ_MODEL || "llama-3.3-70b-versatile",
         messages: [{ role: "system", content: `${SYSTEM_PROMPT}\n\n${inventoryContext}` }, ...safeMessages],
         temperature: 0.4,
         max_tokens: 450,
