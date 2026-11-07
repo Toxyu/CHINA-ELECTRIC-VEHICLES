@@ -1,28 +1,62 @@
-import bcrypt from "bcryptjs";
 import { NextResponse } from "next/server";
-import { createSession } from "@/lib/auth";
-import { prisma } from "@/lib/db";
-import { checkRateLimit, getClientAddress, jsonError, safeError } from "@/lib/http";
+import { createClient } from "@/lib/supabase/server";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { loginSchema } from "@/lib/validation";
 
-const staffRoles = ["SUPER_ADMIN", "INVENTORY_MANAGER", "SALES_MANAGER", "FINANCE_OFFICER", "LOGISTICS_MANAGER"];
-
 export async function POST(request: Request) {
-  if (!(await checkRateLimit(`admin-login:${getClientAddress(request)}`, 8, 15 * 60 * 1000))) {
-    return jsonError("Too many sign-in attempts. Try again later.", 429);
-  }
-  let input: unknown;
-  try { input = await request.json(); } catch { return jsonError("Invalid JSON request.", 400); }
-  const parsed = loginSchema.safeParse(input);
-  if (!parsed.success) return jsonError("Invalid email or password.", 400);
+  let body: unknown;
   try {
-    const user = await prisma.user.findUnique({ where: { email: parsed.data.email } });
-    if (!user || !user.isActive || !staffRoles.includes(user.role) || !(await bcrypt.compare(parsed.data.password, user.passwordHash))) {
-      return jsonError("Invalid email or password.", 401);
-    }
-    await createSession(user.id);
-    return NextResponse.json({ user: { id: user.id, name: user.name, email: user.email, role: user.role } });
-  } catch (error) {
-    return safeError(error);
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid request." }, { status: 400 });
   }
+
+  const parsed = loginSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json({ error: "Invalid email or password." }, { status: 400 });
+  }
+
+  const supabase = await createClient();
+  const { error: signInError } = await supabase.auth.signInWithPassword(parsed.data);
+  if (signInError) {
+    return NextResponse.json({ error: signInError.message }, { status: 401 });
+  }
+
+  const { data: { user }, error: userError } = await supabase.auth.getUser();
+  if (userError || !user) {
+    return NextResponse.json({ error: userError?.message ?? "Supabase returned no authenticated user." }, { status: 401 });
+  }
+
+  const admin = getSupabaseAdmin();
+  let { data: profile, error: profileError } = await admin
+    .from("profiles")
+    .select("id, email, full_name, role")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (profileError) {
+    await supabase.auth.signOut();
+    return NextResponse.json({ error: profileError.message }, { status: 500 });
+  }
+
+  if (!profile && user.email?.toLowerCase() === "chinaevp.org@gmail.com") {
+    const { data: createdProfile, error: createProfileError } = await admin
+      .from("profiles")
+      .insert({ id: user.id, email: user.email, full_name: "China EV Admin", role: "ADMIN" })
+      .select("id, email, full_name, role")
+      .single();
+
+    if (createProfileError) {
+      await supabase.auth.signOut();
+      return NextResponse.json({ error: createProfileError.message }, { status: 500 });
+    }
+    profile = createdProfile;
+  }
+
+  if (!profile || profile.role !== "ADMIN") {
+    await supabase.auth.signOut();
+    return NextResponse.json({ error: "Administrator access required." }, { status: 403 });
+  }
+
+  return NextResponse.json({ user: profile });
 }
