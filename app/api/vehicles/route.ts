@@ -1,77 +1,53 @@
-import { NextResponse } from "next/server";
-import { VehicleCondition } from "@prisma/client";
-import { prisma } from "@/lib/db";
-import { safeError } from "@/lib/http";
+import { NextResponse } from "next/server"
+import { prisma } from "@/lib/db"
+import { safeError } from "@/lib/http"
+import { isSupabaseConfigured, supabaseRequest } from "@/lib/supabase-admin"
+
+function mapCar(car: Record<string, unknown>) {
+  return {
+    id: car.id,
+    stockReference: car.stock_reference ?? car.stockReference ?? car.id,
+    model: car.model ?? car.name ?? "Electric vehicle",
+    year: car.year ?? null,
+    condition: car.condition ?? "NEW",
+    mileageKm: car.mileage_km ?? car.mileageKm ?? 0,
+    batteryKwh: car.battery_kwh ?? car.batteryKwh ?? null,
+    rangeKm: car.range_km ?? car.rangeKm ?? null,
+    chargingSpec: car.charging_spec ?? car.chargingSpec ?? null,
+    driveConfiguration: car.drive_configuration ?? car.driveConfiguration ?? null,
+    transmission: car.transmission ?? null,
+    exteriorColour: car.exterior_colour ?? car.exteriorColour ?? null,
+    interiorColour: car.interior_colour ?? car.interiorColour ?? null,
+    description: car.description ?? null,
+    bodyType: car.body_type ?? car.bodyType ?? null,
+    currency: car.currency ?? "KES",
+    exportPrice: car.export_price ?? car.exportPrice ?? car.price_kes ?? car.price ?? 0,
+    manufacturer: { name: car.manufacturer ?? car.make ?? "China EV" },
+    images: Array.isArray(car.images) ? car.images : car.image_url ? [{ url: car.image_url, alt: car.model ?? "Electric vehicle" }] : [],
+    availability: car.availability ?? "AVAILABLE",
+  }
+}
 
 export async function GET(request: Request) {
-  const params = new URL(request.url).searchParams;
-  const page = Math.max(1, Math.min(1000, Number(params.get("page")) || 1));
-  const pageSize = Math.max(1, Math.min(48, Number(params.get("pageSize")) || 12));
-  const q = params.get("q")?.trim().slice(0, 100);
-  const manufacturer = params.get("manufacturer")?.trim().slice(0, 80);
-  const bodyType = params.get("bodyType")?.trim().slice(0, 60);
-  const condition = params.get("condition");
-  const minPrice = Number(params.get("minPrice"));
-  const maxPrice = Number(params.get("maxPrice"));
-  const minYear = Number(params.get("minYear"));
-  const maxYear = Number(params.get("maxYear"));
-  const minRange = Number(params.get("minRange"));
-  const maxRange = Number(params.get("maxRange"));
-  const orderBy = params.get("sort") === "price-asc"
-    ? { exportPrice: "asc" as const }
-    : params.get("sort") === "year-desc"
-      ? { year: "desc" as const }
-      : { publishedAt: "desc" as const };
+  const params = new URL(request.url).searchParams
+  const page = Math.max(1, Math.min(1000, Number(params.get("page")) || 1))
+  const pageSize = Math.max(1, Math.min(48, Number(params.get("pageSize")) || 12))
 
   try {
-    const yearRange = {
-      ...(Number.isFinite(minYear) && minYear > 1900 ? { gte: minYear } : {}),
-      ...(Number.isFinite(maxYear) && maxYear > 1900 ? { lte: maxYear } : {}),
-    };
-    const priceRange = {
-      ...(Number.isFinite(minPrice) && minPrice >= 0 ? { gte: minPrice } : {}),
-      ...(Number.isFinite(maxPrice) && maxPrice >= 0 ? { lte: maxPrice } : {}),
-    };
-    const rangeRange = {
-      ...(Number.isFinite(minRange) && minRange > 0 ? { gte: minRange } : {}),
-      ...(Number.isFinite(maxRange) && maxRange > 0 ? { lte: maxRange } : {}),
-    };
-    const where = {
-      availability: "AVAILABLE" as const,
-      verifiedAt: { not: null },
-      publishedAt: { not: null },
-      ...(q ? { OR: [
-        { model: { contains: q, mode: "insensitive" as const } },
-        { stockReference: { contains: q, mode: "insensitive" as const } },
-        { manufacturer: { name: { contains: q, mode: "insensitive" as const } } },
-      ] } : {}),
-      ...(manufacturer ? { manufacturer: { name: { equals: manufacturer, mode: "insensitive" as const } } } : {}),
-      ...(bodyType ? { bodyType: { equals: bodyType, mode: "insensitive" as const } } : {}),
-      ...(condition === "NEW" || condition === "USED" ? { condition: condition as VehicleCondition } : {}),
-      ...(Object.keys(yearRange).length ? { year: yearRange } : {}),
-      ...(Object.keys(priceRange).length ? { exportPrice: priceRange } : {}),
-      ...(Object.keys(rangeRange).length ? { rangeKm: rangeRange } : {}),
-    };
-    const [vehicles, total, manufacturers, bodyTypes] = await Promise.all([
-      prisma.vehicle.findMany({
-        where,
-        select: {
-          id: true, stockReference: true, model: true, year: true, condition: true, mileageKm: true,
-          batteryKwh: true, rangeKm: true, chargingSpec: true, driveConfiguration: true, transmission: true,
-          exteriorColour: true, interiorColour: true, description: true, bodyType: true, currency: true,
-          exportPrice: true, manufacturer: { select: { name: true } },
-          images: { orderBy: { sortOrder: "asc" }, take: 8, select: { url: true, alt: true } },
-        },
-        orderBy,
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-      }),
-      prisma.vehicle.count({ where }),
-      prisma.manufacturer.findMany({ where: { vehicles: { some: { availability: "AVAILABLE", verifiedAt: { not: null }, publishedAt: { not: null } } } }, orderBy: { name: "asc" }, select: { name: true } }),
-      prisma.vehicle.findMany({ where: { availability: "AVAILABLE", verifiedAt: { not: null }, publishedAt: { not: null } }, distinct: ["bodyType"], orderBy: { bodyType: "asc" }, select: { bodyType: true } }),
-    ]);
-    return NextResponse.json({ vehicles, total, page, pageSize, pages: Math.ceil(total / pageSize), manufacturers: manufacturers.map((item) => item.name), bodyTypes: bodyTypes.map((item) => item.bodyType) });
+    if (isSupabaseConfigured()) {
+      const rows = await supabaseRequest<Record<string, unknown>[]>("cars?select=*&availability=eq.AVAILABLE&order=created_at.desc")
+      const mapped = rows.map(mapCar)
+      const q = params.get("q")?.trim().toLowerCase()
+      const filtered = q ? mapped.filter((car) => `${car.model} ${car.manufacturer.name} ${car.stockReference}`.toLowerCase().includes(q)) : mapped
+      const start = (page - 1) * pageSize
+      const vehicles = filtered.slice(start, start + pageSize)
+      return NextResponse.json({ vehicles, total: filtered.length, page, pageSize, pages: Math.ceil(filtered.length / pageSize), manufacturers: [...new Set(filtered.map((car) => car.manufacturer.name))], bodyTypes: [...new Set(filtered.map((car) => car.bodyType).filter(Boolean))] })
+    }
+
+    const vehicles = await prisma.vehicle.findMany({ take: pageSize, skip: (page - 1) * pageSize, orderBy: { publishedAt: "desc" }, select: { id: true, stockReference: true, model: true, year: true, condition: true, mileageKm: true, batteryKwh: true, rangeKm: true, chargingSpec: true, driveConfiguration: true, transmission: true, exteriorColour: true, interiorColour: true, description: true, bodyType: true, currency: true, exportPrice: true, manufacturer: { select: { name: true } }, images: { orderBy: { sortOrder: "asc" }, take: 8, select: { url: true, alt: true } } } })
+    const total = await prisma.vehicle.count()
+    return NextResponse.json({ vehicles, total, page, pageSize, pages: Math.ceil(total / pageSize), manufacturers: [], bodyTypes: [] })
   } catch (error) {
-    return safeError(error);
+    return NextResponse.json({ vehicles: [], total: 0, page, pageSize, pages: 0, manufacturers: [], bodyTypes: [], error: "Inventory is temporarily unavailable" }, { status: 503 })
   }
 }
