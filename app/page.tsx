@@ -35,8 +35,13 @@ export default function Home() {
 
   useEffect(() => {
     fetch("/api/vehicles?pageSize=3")
-      .then(async (response) => response.ok ? response.json() : Promise.reject(new Error("Inventory is unavailable.")))
-      .then((data: { vehicles: FeaturedVehicle[] }) => setVehicles(data.vehicles))
+      .then(async (response) => {
+        const text = await response.text();
+        const data = text ? JSON.parse(text) : {};
+        if (!response.ok) throw new Error(data.error || "Inventory is unavailable.");
+        return data as { vehicles: FeaturedVehicle[] };
+      })
+      .then((data) => setVehicles(data.vehicles ?? []))
       .catch(() => setVehicles([]));
   }, []);
 
@@ -50,7 +55,8 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...form, vehicleBrief: form.vehicle, vehicleId: form.vehicleId || undefined, quantity: 1 }),
       });
-      const data = await response.json();
+      const text = await response.text();
+      const data = text ? JSON.parse(text) : {};
       if (!response.ok) throw new Error(data.error || "Your enquiry could not be saved.");
       setEnquiryStatus("Enquiry received. Our team will verify availability and pricing before responding.");
       setForm({name:"",email:"",country:"",vehicle:"",vehicleId:"",budget:"",notes:""});
@@ -66,10 +72,11 @@ export default function Home() {
     setMessages(next); setQuestion(""); setBusy(true);
     try {
       const response = await fetch("/api/agent", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({messages:next.slice(-12)}) });
-      const data = await response.json();
-      setMessages([...next, {role:"assistant", content:data.reply || data.error || "I couldn't complete that request. Please try again."}]);
+      const text = await response.text();
+      const data = text ? JSON.parse(text) : {};
+      setMessages([...next, {role:"assistant", content:data.reply || data.error || "I could not find a matching answer. Please share your destination, budget and preferred EV."}]);
     } catch {
-      setMessages([...next, {role:"assistant", content:"The AI service is not connected yet. Please use the enquiry form or WhatsApp while the site owner configures the AI API key."}]);
+      setMessages([...next, {role:"assistant", content:"I could not complete that request. Please use the sourcing form and our team will help you directly."}]);
     } finally { setBusy(false); }
   }
 
