@@ -1,7 +1,26 @@
 import { createHash } from "node:crypto";
 import { createClient } from "@/lib/supabase/server";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
-export async function getCurrentUser() { const supabase = await createClient(); const { data } = await supabase.auth.getUser(); if (!data.user) return null; return { id: data.user.id, email: data.user.email ?? "", name: data.user.user_metadata?.name ?? data.user.email ?? "", role: data.user.user_metadata?.role ?? "CUSTOMER" } as any; }
+export async function getCurrentUser() {
+  const supabase = await createClient();
+  const { data: { user }, error } = await supabase.auth.getUser();
+  if (error || !user) return null;
+
+  const { data: profile } = await getSupabaseAdmin()
+    .from("profiles")
+    .select("email, full_name, role")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  return {
+    id: user.id,
+    email: profile?.email ?? user.email ?? "",
+    name: profile?.full_name ?? user.user_metadata?.name ?? user.email ?? "",
+    role: profile?.role ?? "CUSTOMER",
+  };
+}
+
 export function hasRole(role: string, allowed: string[]) { return allowed.includes(role); }
 export function isAdmin(role?: string) { return role === "ADMIN" || role === "SUPER_ADMIN"; }
 export function isStaff(role?: string) { return isAdmin(role) || role === "STAFF"; }
