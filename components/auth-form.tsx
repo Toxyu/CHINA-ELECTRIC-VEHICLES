@@ -7,7 +7,7 @@ import { createClient, getSupabaseBrowserConfig } from "@/lib/supabase/client";
 
 type AuthMode = "login" | "register" | "forgot" | "reset" | "verify" | "admin";
 
-export function AuthForm({ mode, token = "" }: { mode: AuthMode; token?: string }) {
+export function AuthForm({ mode, token = "", alreadyAuthenticated = false }: { mode: AuthMode; token?: string; alreadyAuthenticated?: boolean }) {
   const router = useRouter();
   const [values, setValues] = useState({ name: "", email: "", password: "", phone: "" });
   const [message, setMessage] = useState("");
@@ -95,7 +95,7 @@ export function AuthForm({ mode, token = "" }: { mode: AuthMode; token?: string 
           throw new Error(data.error || "Administrator access required.");
         }
 
-        router.push("/admin/dashboard");
+        window.location.href = "/admin";
       } catch (error) {
         const isNetworkFailure = error instanceof TypeError;
         const detail = isNetworkFailure
@@ -166,6 +166,7 @@ export function AuthForm({ mode, token = "" }: { mode: AuthMode; token?: string 
         <button className="button button-dark form-submit" type="submit" disabled={busy}>{busy ? "Please wait…" : mode === "verify" ? "Verify email address" : title}</button>
       </form>
       {message && <p className="auth-message" role="status">{message}</p>}
+      {mode === "admin" && alreadyAuthenticated && <Link className="button button-dark" href="/admin">Go to Dashboard</Link>}
       {mode === "admin" && diagnostic && <aside className="auth-diagnostic" role="alert">
         <strong>Sign-in diagnostics: {diagnostic.kind}</strong>
         <p>{diagnostic.detail}</p>

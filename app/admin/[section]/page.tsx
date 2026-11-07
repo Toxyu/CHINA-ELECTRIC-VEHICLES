@@ -1,6 +1,9 @@
-import { notFound, redirect } from "next/navigation";
+import Link from "next/link";
+import { notFound } from "next/navigation";
 import { AdminWorkspace } from "@/components/admin-workspace";
 import { getCurrentUser, isStaff } from "@/lib/auth";
+
+export const dynamic = "force-dynamic";
 
 const sections = ["dashboard", "vehicles", "customers", "suppliers", "quotations", "discounts", "orders", "payments", "shipments", "settings"] as const;
 type AdminSection = (typeof sections)[number];
@@ -21,7 +24,11 @@ export default async function AdminSectionPage({ params }: { params: Promise<{ s
   const { section } = await params;
   if (!sections.includes(section as AdminSection)) notFound();
   const user = await getCurrentUser();
-  if (!user || !isStaff(user.role)) redirect("/admin/login");
-  if (!sectionRoles[section as AdminSection].includes(user.role)) redirect("/admin/dashboard");
+  if (!user || !isStaff(user.role)) {
+    return <main className="auth-page"><section className="auth-card"><div className="section-kicker">E.V CHINA GLOBAL ADMINISTRATION</div><h1>Please sign in</h1><p>You need an administrator session to access this section.</p><Link className="button button-dark" href="/admin/login">Sign in to admin</Link></section></main>;
+  }
+  if (!sectionRoles[section as AdminSection].includes(user.role)) {
+    return <main className="auth-page"><section className="auth-card"><div className="section-kicker">E.V CHINA GLOBAL ADMINISTRATION</div><h1>Access unavailable</h1><p>Your administrator role does not include this section.</p><Link className="button button-dark" href="/admin">Return to dashboard</Link></section></main>;
+  }
   return <AdminWorkspace section={section as AdminSection} user={user}/>;
 }
