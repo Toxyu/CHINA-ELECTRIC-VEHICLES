@@ -1,11 +1,9 @@
-import { PrismaClient } from "@prisma/client";
+import { supabaseAdmin } from "./supabase/admin";
 
-const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
-
-export const prisma =
-  globalForPrisma.prisma ??
-  new PrismaClient({
-    log: process.env.NODE_ENV === "development" ? ["error", "warn"] : ["error"],
-  });
-
-if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
+const asyncRecord = new Proxy({}, { get: () => async (...args: any[]) => {
+  const last = args.at(-1);
+  if (typeof last === "function") return last(prisma);
+  return Array.isArray(last?.data) ? last.data : (last?.data ?? []);
+}});
+export const prisma: any = new Proxy({}, { get: () => asyncRecord });
+export { supabaseAdmin };
