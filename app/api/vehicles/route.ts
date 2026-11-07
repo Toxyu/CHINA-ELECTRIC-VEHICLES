@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server"
-import { prisma } from "@/lib/db"
 import { safeError } from "@/lib/http"
 import { isSupabaseConfigured, supabaseRequest } from "@/lib/supabase-admin"
 
@@ -44,9 +43,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ vehicles, total: filtered.length, page, pageSize, pages: Math.ceil(filtered.length / pageSize), manufacturers: [...new Set(filtered.map((car) => car.manufacturer.name))], bodyTypes: [...new Set(filtered.map((car) => car.bodyType).filter(Boolean))] })
     }
 
-    const vehicles = await prisma.vehicle.findMany({ take: pageSize, skip: (page - 1) * pageSize, orderBy: { publishedAt: "desc" }, select: { id: true, stockReference: true, model: true, year: true, condition: true, mileageKm: true, batteryKwh: true, rangeKm: true, chargingSpec: true, driveConfiguration: true, transmission: true, exteriorColour: true, interiorColour: true, description: true, bodyType: true, currency: true, exportPrice: true, manufacturer: { select: { name: true } }, images: { orderBy: { sortOrder: "asc" }, take: 8, select: { url: true, alt: true } } } })
-    const total = await prisma.vehicle.count()
-    return NextResponse.json({ vehicles, total, page, pageSize, pages: Math.ceil(total / pageSize), manufacturers: [], bodyTypes: [] })
+    return NextResponse.json({ vehicles: [], total: 0, page, pageSize, pages: 0, manufacturers: [], bodyTypes: [], error: "Supabase inventory is not configured" }, { status: 503 })
   } catch (error) {
     return NextResponse.json({ vehicles: [], total: 0, page, pageSize, pages: 0, manufacturers: [], bodyTypes: [], error: "Inventory is temporarily unavailable" }, { status: 503 })
   }
