@@ -19,11 +19,12 @@ async function registerWithSupabase(input: { name: string; email: string; phone?
     signal: AbortSignal.timeout(15_000),
   });
   const text = await response.text();
-  let data: { user?: { id?: string; email?: string }; msg?: string; error_description?: string } = {};
+  let data: { user?: { id?: string; email?: string }; msg?: string; error?: string; error_code?: string; error_description?: string } = {};
   try { data = text ? JSON.parse(text) : {}; } catch { data = {}; }
   if (!response.ok) {
-    console.error("Supabase signup failed", response.status, data.error_description || data.msg);
-    return { error: "We could not create the account. Check the details and try again." };
+    const message = data.error_description || data.msg || data.error || "Supabase signup failed.";
+    console.error("SIGNUP_ERROR", response.status, message, data.error_code);
+    return { error: message, code: data.error_code };
   }
 
   if (data.user?.id && process.env.SUPABASE_SERVICE_ROLE_KEY) {

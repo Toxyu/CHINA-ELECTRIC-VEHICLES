@@ -79,12 +79,18 @@ export async function POST(req: Request) {
     safeMessages.push({ role: message.role, content: message.content });
   }
 
-  const fallbackReply = "Hello! I can help you source BYD, Neta and Zeekr electric vehicles from China to Kenya and other markets. What is your budget in KES, destination country and preferred model?";
-  const key = process.env.GROQ_API_KEY;
-  if (!key) {
-    console.error("GROQ_API_KEY is not configured; using assistant fallback");
-    return NextResponse.json({ reply: fallbackReply });
-  }
+  const key = process.env.GROQ_API_KEY || process.env.OPENAI_API_KEY;
+  console.log("HAS_GROQ", Boolean(process.env.GROQ_API_KEY));
+  const fallbackReply = (records: typeof inventory) => {
+    const budgetMatch = latestQuestion.match(/(?:kes|ksh)?\s*(\d+(?:\.\d+)?)\s*(million|m|thousand|k)?/i);
+    const amount = budgetMatch ? Number(budgetMatch[1]) * (budgetMatch[2]?.toLowerCase() === "million" || budgetMatch[2]?.toLowerCase() === "m" ? 1_000_000 : budgetMatch[2]?.toLowerCase() === "thousand" || budgetMatch[2]?.toLowerCase() === "k" ? 1_000 : 1) : null;
+    const matches = amount ? records.filter((record) => Number(record.price) <= amount) : records;
+    if (matches.length) {
+      return `Here are available options matching your request: ${matches.map((record) => `${record.make} ${record.model} at ${record.currency} ${record.price}${record.rangeKm ? `, ${record.rangeKm}km range` : ""}`).join("; ")}. Landed cost will also include shipping, duty, taxes and registration. Want me to send you a full quote on WhatsApp?`;
+    }
+    if (amount) return `I could not find verified inventory under your stated budget of KES ${amount.toLocaleString()}. I can source suitable BYD, Neta or Zeekr options and prepare a written quote including shipping, duty and registration. What destination and preferred model should I use?`;
+    return "I can help source BYD, Neta and Zeekr vehicles from China. What is your budget in KES, destination country and preferred model?";
+  };
 
   const latestQuestion = safeMessages.filter((message) => message.role === "user").at(-1)?.content || "";
   const searchTerms = [...new Set(latestQuestion.toLowerCase().match(/[a-z0-9-]{3,}/g) || [])].slice(0, 6);
@@ -127,13 +133,19 @@ export async function POST(req: Request) {
     ? `Verified currently available inventory (use only these records for stock, price, range or battery facts): ${JSON.stringify(inventory)}`
     : "There are no verified available inventory records matching this request. Do not recommend or price a listed vehicle; offer a human sourcing enquiry instead.";
 
+  if (!key) {
+    console.error("No AI provider key configured; returning catalog-aware fallback");
+    return NextResponse.json({ reply: fallbackReply(inventory) });
+  }
+
+  const isGroq = Boolean(process.env.GROQ_API_KEY);
   let upstream: Response;
   try {
-    upstream = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    upstream = await fetch(isGroq ? "https://api.groq.com/openai/v1/chat/completions" : "https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
       body: JSON.stringify({
-        model: process.env.GROQ_MODEL || "llama-3.3-70b-versatile",
+        model: isGroq ? (process.env.GROQ_MODEL || "llama-3.3-70b-versatile") : "gpt-4o-mini",
         messages: [{ role: "system", content: `${SYSTEM_PROMPT}\n\n${inventoryContext}` }, ...safeMessages],
         temperature: 0.4,
         max_tokens: 450,
@@ -142,12 +154,12 @@ export async function POST(req: Request) {
     });
   } catch (error) {
     console.error("AI provider request failed", error);
-    return NextResponse.json({ reply: fallbackReply });
+    return NextResponse.json({ reply: fallbackReply(inventory) });
   }
 
   if (!upstream.ok) {
     console.error("AI provider returned", upstream.status);
-    return NextResponse.json({ reply: fallbackReply });
+    return NextResponse.json({ reply: fallbackReply(inventory) });
   }
 
   let data: unknown;
@@ -155,18 +167,18 @@ export async function POST(req: Request) {
     data = await upstream.json();
   } catch (error) {
     console.error("AI provider returned invalid JSON", error);
-    return NextResponse.json({ reply: fallbackReply });
+    return NextResponse.json({ reply: fallbackReply(inventory) });
   }
 
   if (!isRecord(data) || !Array.isArray(data.choices) || !isRecord(data.choices[0])) {
     console.error("AI provider response did not contain a choice");
-    return NextResponse.json({ reply: fallbackReply });
+    return NextResponse.json({ reply: fallbackReply(inventory) });
   }
 
   const message = data.choices[0].message;
   if (!isRecord(message) || typeof message.content !== "string") {
     console.error("AI provider response did not contain message content");
-    return NextResponse.json({ reply: fallbackReply });
+    return NextResponse.json({ reply: fallbackReply(inventory) });
   }
 
   return NextResponse.json({ reply: message.content });

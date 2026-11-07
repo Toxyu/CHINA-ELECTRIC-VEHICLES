@@ -1,38 +1,32 @@
-import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth";
-import { prisma } from "@/lib/db";
-import { checkRateLimit, getClientAddress, jsonError, safeError } from "@/lib/http";
-import { enquirySchema } from "@/lib/validation";
+import { NextResponse } from "next/server"
+import { prisma } from "@/lib/db"
+import { isSupabaseConfigured, supabaseRequest } from "@/lib/supabase-admin"
+
+const json = (body: unknown, status = 200) => NextResponse.json(body, { status })
+
+async function notifyByEmail(subject: string, html: string) {
+  if (!process.env.RESEND_API_KEY) return
+  await fetch("https://api.resend.com/emails", { method: "POST", headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" }, body: JSON.stringify({ from: process.env.RESEND_FROM_EMAIL ?? "onboarding@resend.dev", to: ["chinaevp.org@gmail.com"], subject, html }) })
+}
 
 export async function POST(request: Request) {
-  let input: unknown;
   try {
-    const allowed = await checkRateLimit(`enquiry:${getClientAddress(request)}`, 8, 60 * 60 * 1000).catch(() => true);
-    if (!allowed) return jsonError("Too many enquiries. Please try again later.", 429);
-    input = await request.json();
+    const body = await request.json().catch(() => null)
+    const name = typeof body?.name === "string" ? body.name.trim().slice(0, 120) : ""
+    const email = typeof body?.email === "string" ? body.email.trim().toLowerCase().slice(0, 240) : ""
+    const message = typeof body?.message === "string" ? body.message.trim().slice(0, 5000) : ""
+    const subject = typeof body?.subject === "string" ? body.subject.trim().slice(0, 240) : "Vehicle sourcing enquiry"
+    if (!name || !email || !message || !/^\S+@\S+\.\S+$/.test(email)) return json({ error: "Please provide a name, valid email, and message." }, 400)
+
+    if (isSupabaseConfigured()) {
+      await supabaseRequest("enquiries", { method: "POST", body: JSON.stringify({ name, email, subject, message, status: "NEW" }) })
+    } else {
+      await prisma.enquiry.create({ data: { name, email, country: "Unknown", vehicleBrief: subject, notes: message } })
+    }
+
+    try { await notifyByEmail(subject, `<p><strong>${name}</strong> (${email})</p><p>${message.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</p>`) } catch { /* email is optional; persistence already succeeded */ }
+    return json({ ok: true, message: "Thanks — your message has been received." }, 201)
   } catch {
-    return jsonError("Invalid JSON request.", 400);
-  }
-  const parsed = enquirySchema.safeParse(input);
-  if (!parsed.success) return NextResponse.json({ error: "Check the enquiry details.", details: parsed.error.flatten() }, { status: 400 });
-  try {
-    const user = await getCurrentUser();
-    if (user && parsed.data.email !== user.email) {
-      return jsonError("Use the email address on your signed-in account, or sign out to submit a separate enquiry.", 400);
-    }
-    if (parsed.data.vehicleId) {
-      const vehicle = await prisma.vehicle.findFirst({
-        where: { id: parsed.data.vehicleId, availability: "AVAILABLE", verifiedAt: { not: null }, publishedAt: { not: null } },
-        select: { id: true },
-      });
-      if (!vehicle) return jsonError("The selected vehicle is no longer available for enquiry.", 404);
-    }
-    const enquiry = await prisma.enquiry.create({
-      data: { ...parsed.data, userId: user?.emailVerifiedAt ? user.id : null },
-      select: { id: true, status: true, createdAt: true },
-    });
-    return NextResponse.json({ enquiry, message: "Your enquiry has been received. Our team will verify availability and pricing." }, { status: 201 });
-  } catch (error) {
-    return safeError(error);
+    return json({ error: "We could not save your message right now. Please try again." }, 500)
   }
 }
