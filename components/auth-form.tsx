@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient, getSupabaseBrowserConfig } from "@/lib/supabase/client";
@@ -13,7 +13,42 @@ export function AuthForm({ mode, token = "" }: { mode: AuthMode; token?: string 
   const [message, setMessage] = useState("");
   const [verificationUrl, setVerificationUrl] = useState("");
   const [busy, setBusy] = useState(false);
-  const [diagnostic, setDiagnostic] = useState<{ kind: string; detail: string } | null>(null);
+  const [diagnostic, setDiagnostic] = useState<{ kind: string; detail: string } | null>(() => mode === "admin"
+    ? { kind: "configuration", detail: "Checking browser configuration and Supabase Auth reachability…" }
+    : null);
+
+  useEffect(() => {
+    if (mode !== "admin") return;
+    const config = getSupabaseBrowserConfig();
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 6000);
+
+    async function checkAuthEndpoint() {
+      if (!config.hasUrl || !config.validUrl) {
+        setDiagnostic({ kind: "configuration", detail: `URL present: ${config.hasUrl}; anon key present: ${config.hasAnonKey}; valid HTTPS URL: ${config.validUrl}; expected host: ${config.expectedHostname}; configured host: ${config.hostname || "missing"}.` });
+        return;
+      }
+
+      try {
+        const response = await fetch(`${config.url?.replace(/\/$/, "")}/auth/v1/health`, { signal: controller.signal, cache: "no-store" });
+        setDiagnostic({ kind: "reachability", detail: `Auth endpoint responded with HTTP ${response.status}. URL present: ${config.hasUrl}; anon key present: ${config.hasAnonKey}; hostname matches: ${config.hostnameMatchesExpected}.` });
+      } catch (error) {
+        const detail = error instanceof DOMException && error.name === "AbortError"
+          ? "Auth endpoint check timed out after 6 seconds."
+          : `Auth endpoint is unreachable: ${error instanceof Error ? error.message : String(error)}`;
+        console.error("[v0] Supabase Auth reachability check failed", { url: config.url, error });
+        setDiagnostic({ kind: "network", detail: `${detail} URL present: ${config.hasUrl}; anon key present: ${config.hasAnonKey}; hostname matches: ${config.hostnameMatchesExpected}.` });
+      } finally {
+        window.clearTimeout(timeout);
+      }
+    }
+
+    void checkAuthEndpoint();
+    return () => {
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [mode]);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -134,7 +169,7 @@ export function AuthForm({ mode, token = "" }: { mode: AuthMode; token?: string 
       {mode === "admin" && diagnostic && <aside className="auth-diagnostic" role="alert">
         <strong>Sign-in diagnostics: {diagnostic.kind}</strong>
         <p>{diagnostic.detail}</p>
-        <small>Public configuration: {getSupabaseBrowserConfig().hasUrl ? "URL present" : "URL missing"}; {getSupabaseBrowserConfig().hasAnonKey ? "anon key present" : "anon key missing"}.</small>
+        <small>Public configuration: {getSupabaseBrowserConfig().hasUrl ? "URL present" : "URL missing"}; {getSupabaseBrowserConfig().hasAnonKey ? "anon key present" : "anon key missing"}; hostname {getSupabaseBrowserConfig().hostnameMatchesExpected ? "matches expected project" : "does not match expected project"}.</small>
       </aside>}
       {verificationUrl && <a className="auth-action-link" href={verificationUrl}>{mode === "register" ? "Open verification link (development only)" : "Open password reset link (development only)"}</a>}
       <div className="auth-links">
