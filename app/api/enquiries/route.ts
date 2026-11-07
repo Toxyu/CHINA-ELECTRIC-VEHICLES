@@ -5,11 +5,14 @@ import { checkRateLimit, getClientAddress, jsonError, safeError } from "@/lib/ht
 import { enquirySchema } from "@/lib/validation";
 
 export async function POST(request: Request) {
-  if (!(await checkRateLimit(`enquiry:${getClientAddress(request)}`, 8, 60 * 60 * 1000))) {
-    return jsonError("Too many enquiries. Please try again later.", 429);
-  }
   let input: unknown;
-  try { input = await request.json(); } catch { return jsonError("Invalid JSON request.", 400); }
+  try {
+    const allowed = await checkRateLimit(`enquiry:${getClientAddress(request)}`, 8, 60 * 60 * 1000).catch(() => true);
+    if (!allowed) return jsonError("Too many enquiries. Please try again later.", 429);
+    input = await request.json();
+  } catch {
+    return jsonError("Invalid JSON request.", 400);
+  }
   const parsed = enquirySchema.safeParse(input);
   if (!parsed.success) return NextResponse.json({ error: "Check the enquiry details.", details: parsed.error.flatten() }, { status: 400 });
   try {
