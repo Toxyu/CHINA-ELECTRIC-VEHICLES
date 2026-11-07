@@ -44,8 +44,8 @@ export async function POST(req: Request) {
     if (!(await checkRateLimit(`ai:${getClientAddress(req)}`, 20, 60 * 60 * 1000))) {
       return jsonError("AI usage limit reached. Try again later.", 429);
     }
-  } catch {
-    return jsonError("AI service is temporarily unavailable.", 503);
+  } catch (error) {
+    console.error("AI rate limit persistence unavailable", error);
   }
 
   let body: unknown;
@@ -117,8 +117,8 @@ export async function POST(req: Request) {
       rangeKm: vehicle.rangeKm,
       batteryKwh: vehicle.batteryKwh?.toString() ?? null,
     }));
-  } catch {
-    return jsonError("Inventory data is unavailable. Please try again later.", 503);
+  } catch (error) {
+    console.error("AI inventory context unavailable", error);
   }
 
   const inventoryContext = inventory.length
