@@ -3,7 +3,7 @@
 import { FormEvent, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
+import { createClient, getSupabaseBrowserConfig } from "@/lib/supabase/client";
 
 type AuthMode = "login" | "register" | "forgot" | "reset" | "verify" | "admin";
 
@@ -13,6 +13,7 @@ export function AuthForm({ mode, token = "" }: { mode: AuthMode; token?: string 
   const [message, setMessage] = useState("");
   const [verificationUrl, setVerificationUrl] = useState("");
   const [busy, setBusy] = useState(false);
+  const [diagnostic, setDiagnostic] = useState<{ kind: string; detail: string } | null>(null);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -20,29 +21,54 @@ export function AuthForm({ mode, token = "" }: { mode: AuthMode; token?: string 
     setBusy(true);
 
     if (mode === "admin") {
+      const config = getSupabaseBrowserConfig();
       try {
+        if (!config.hasUrl || !config.hasAnonKey || !config.validUrl) {
+          const detail = `Browser Supabase configuration is invalid. URL present: ${config.hasUrl}; anon key present: ${config.hasAnonKey}; valid HTTPS URL: ${config.validUrl}.`;
+          console.error("[v0] Supabase browser configuration failure", { ...config, anonKey: undefined });
+          setDiagnostic({ kind: "configuration", detail });
+          throw new Error(detail);
+        }
+
         const supabase = createClient();
+        console.info("[v0] Supabase sign-in starting", {
+          url: config.url,
+          method: "POST",
+          endpoint: `${config.url?.replace(/\/$/, "")}/auth/v1/token?grant_type=password`,
+        });
         const { error: signInError } = await supabase.auth.signInWithPassword({
           email: values.email,
           password: values.password,
         });
         if (signInError) {
-          console.error("[v0] staff Supabase sign-in failed", signInError.message);
+          console.error("[v0] Supabase sign-in failed", {
+            name: signInError.name,
+            message: signInError.message,
+            status: signInError.status,
+            code: signInError.code,
+          });
+          setDiagnostic({ kind: "supabase", detail: `${signInError.name}: ${signInError.message}${signInError.status ? ` (HTTP ${signInError.status})` : ""}` });
           throw new Error(signInError.message);
         }
 
         const response = await fetch("/api/auth/admin-session", { cache: "no-store" });
         const data = await response.json() as { error?: string };
         if (!response.ok) {
-          console.error("[v0] staff profile authorization failed", data.error);
+          console.error("[v0] staff profile authorization failed", { status: response.status, error: data.error });
           await supabase.auth.signOut();
+          setDiagnostic({ kind: "authorization", detail: `Admin profile check failed (HTTP ${response.status}): ${data.error || "Unknown error"}` });
           throw new Error(data.error || "Administrator access required.");
         }
 
         router.push("/admin/dashboard");
       } catch (error) {
-        console.error("[v0] staff login request failed", error);
-        setMessage(error instanceof Error ? error.message : "Staff sign in failed.");
+        const isNetworkFailure = error instanceof TypeError;
+        const detail = isNetworkFailure
+          ? "The browser could not reach Supabase. This may be DNS, CORS, CSP, an unavailable project, or a blocked network request; the browser did not expose an HTTP status."
+          : error instanceof Error ? error.message : "Staff sign in failed.";
+        console.error("[v0] staff login request failed", { error, isNetworkFailure, url: config.url, method: "POST" });
+        setDiagnostic((current) => current ?? { kind: isNetworkFailure ? "network" : "unexpected", detail });
+        setMessage(detail);
       } finally {
         setBusy(false);
       }
@@ -106,6 +132,11 @@ export function AuthForm({ mode, token = "" }: { mode: AuthMode; token?: string 
         <button className="button button-dark form-submit" type="submit" disabled={busy}>{busy ? "Please wait…" : mode === "verify" ? "Verify email address" : title}</button>
       </form>
       {message && <p className="auth-message" role="status">{message}</p>}
+      {mode === "admin" && diagnostic && <aside className="auth-diagnostic" role="alert">
+        <strong>Sign-in diagnostics: {diagnostic.kind}</strong>
+        <p>{diagnostic.detail}</p>
+        <small>Public configuration: {getSupabaseBrowserConfig().hasUrl ? "URL present" : "URL missing"}; {getSupabaseBrowserConfig().hasAnonKey ? "anon key present" : "anon key missing"}.</small>
+      </aside>}
       {verificationUrl && <a className="auth-action-link" href={verificationUrl}>{mode === "register" ? "Open verification link (development only)" : "Open password reset link (development only)"}</a>}
       <div className="auth-links">
         {mode === "login" && <><Link href="/register">Create account</Link><Link href="/forgot-password">Forgot password?</Link><Link href="/admin/login">Staff sign in</Link></>}
