@@ -3,6 +3,7 @@
 import { FormEvent, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
 
 type AuthMode = "login" | "register" | "forgot" | "reset" | "verify" | "admin";
 
@@ -17,6 +18,37 @@ export function AuthForm({ mode, token = "" }: { mode: AuthMode; token?: string 
     event.preventDefault();
     setMessage("");
     setBusy(true);
+
+    if (mode === "admin") {
+      try {
+        const supabase = createClient();
+        const { error: signInError } = await supabase.auth.signInWithPassword({
+          email: values.email,
+          password: values.password,
+        });
+        if (signInError) {
+          console.error("[v0] staff Supabase sign-in failed", signInError.message);
+          throw new Error(signInError.message);
+        }
+
+        const response = await fetch("/api/auth/admin-session", { cache: "no-store" });
+        const data = await response.json() as { error?: string };
+        if (!response.ok) {
+          console.error("[v0] staff profile authorization failed", data.error);
+          await supabase.auth.signOut();
+          throw new Error(data.error || "Administrator access required.");
+        }
+
+        router.push("/admin/dashboard");
+      } catch (error) {
+        console.error("[v0] staff login request failed", error);
+        setMessage(error instanceof Error ? error.message : "Staff sign in failed.");
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+
     const endpoint = mode === "register" ? "/api/auth/register"
       : mode === "forgot" ? "/api/auth/forgot-password"
         : mode === "reset" ? "/api/auth/reset-password"
