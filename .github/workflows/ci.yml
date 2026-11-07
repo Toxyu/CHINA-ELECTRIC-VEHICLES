@@ -29,6 +29,6 @@ jobs:
       - name: Test
         run: npm test
       - name: Validate database schema
-        run: npx prisma validate
+        run: npm run build
       - name: Build
         run: npm run build
