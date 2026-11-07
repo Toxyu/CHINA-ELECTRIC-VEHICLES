@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase/admin";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 export async function GET(request: NextRequest) {
   try {
@@ -8,7 +8,7 @@ export async function GET(request: NextRequest) {
     const make = searchParams.get("make")?.trim();
     const availability = searchParams.get("availability")?.trim();
     const maxPrice = Number(searchParams.get("maxPrice"));
-    let builder = supabaseAdmin.from("cars").select("*").eq("is_active", true).order("created_at", { ascending: false });
+    let builder = getSupabaseAdmin().from("cars").select("*").eq("is_active", true).order("created_at", { ascending: false });
     if (make) builder = builder.ilike("make", make);
     if (availability) builder = builder.eq("availability", availability);
     if (Number.isFinite(maxPrice) && maxPrice > 0) builder = builder.lte("price_kes", maxPrice);

@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase/admin";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 export async function POST(request: Request) {
   try {
+    const supabaseAdmin = getSupabaseAdmin();
     const body = await request.json();
     const required = ["name", "email", "country", "vehicle"];
     if (required.some((key) => typeof body[key] !== "string" || !body[key].trim())) return NextResponse.json({ error: "Please complete the required fields." }, { status: 400 });
@@ -13,6 +14,6 @@ export async function POST(request: Request) {
 }
 
 export async function GET() {
-  try { const { data, error } = await supabaseAdmin.from("enquiries").select("*").order("created_at", { ascending: false }); if (error) return NextResponse.json({ error: error.message }, { status: 500 }); return NextResponse.json({ enquiries: data ?? [] }); }
+  try { const supabaseAdmin = getSupabaseAdmin(); const { data, error } = await supabaseAdmin.from("enquiries").select("*").order("created_at", { ascending: false }); if (error) return NextResponse.json({ error: error.message }, { status: 500 }); return NextResponse.json({ enquiries: data ?? [] }); }
   catch { return NextResponse.json({ error: "Unable to load enquiries." }, { status: 500 }); }
 }
