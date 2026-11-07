@@ -99,7 +99,7 @@ export function AuthForm({ mode, token = "" }: { mode: AuthMode; token?: string 
       } catch (error) {
         const isNetworkFailure = error instanceof TypeError;
         const detail = isNetworkFailure
-          ? "The browser could not reach Supabase. This may be DNS, CORS, CSP, an unavailable project, or a blocked network request; the browser did not expose an HTTP status."
+          ? `The browser could not reach Supabase: ${error instanceof Error ? error.message : "Unknown network error"}. This may be DNS, CORS, CSP, an unavailable project, or a blocked network request; the browser did not expose an HTTP status.`
           : error instanceof Error ? error.message : "Staff sign in failed.";
         console.error("[v0] staff login request failed", { error, isNetworkFailure, url: config.url, method: "POST" });
         setDiagnostic((current) => current ?? { kind: isNetworkFailure ? "network" : "unexpected", detail });
@@ -169,7 +169,7 @@ export function AuthForm({ mode, token = "" }: { mode: AuthMode; token?: string 
       {mode === "admin" && diagnostic && <aside className="auth-diagnostic" role="alert">
         <strong>Sign-in diagnostics: {diagnostic.kind}</strong>
         <p>{diagnostic.detail}</p>
-        <small>Public configuration: {getSupabaseBrowserConfig().hasUrl ? "URL present" : "URL missing"}; {getSupabaseBrowserConfig().hasAnonKey ? "anon key present" : "anon key missing"}; hostname {getSupabaseBrowserConfig().hostnameMatchesExpected ? "matches expected project" : "does not match expected project"}.</small>
+        <small>Runtime debug: NEXT_PUBLIC_SUPABASE_URL is {getSupabaseBrowserConfig().url === undefined ? "undefined" : "defined"}; {getSupabaseBrowserConfig().hasAnonKey ? "anon key present" : "anon key missing"}; configured URL: {getSupabaseBrowserConfig().url || "undefined"}; hostname {getSupabaseBrowserConfig().hostnameMatchesExpected ? "matches expected project" : "does not match expected project"}.</small>
       </aside>}
       {verificationUrl && <a className="auth-action-link" href={verificationUrl}>{mode === "register" ? "Open verification link (development only)" : "Open password reset link (development only)"}</a>}
       <div className="auth-links">

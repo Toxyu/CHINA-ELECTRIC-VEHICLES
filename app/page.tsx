@@ -1,6 +1,6 @@
  "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { ArrowRight, ArrowUpRight, BatteryCharging, CarFront, CheckCircle2, ChevronDown, Globe2, Menu, MessageCircle, PackageCheck, Search, ShieldCheck, Ship, Sparkles, X, Zap } from "lucide-react";
 
@@ -22,7 +22,7 @@ const sourcingProcess = [
 ];
 
 export default function Home() {
-  const [vehicles, setVehicles] = useState<FeaturedVehicle[]>([]);
+  const vehicles: FeaturedVehicle[] = [];
   const [enquiryStatus, setEnquiryStatus] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
@@ -32,18 +32,6 @@ export default function Home() {
   const [question, setQuestion] = useState("");
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState({name:"", email:"", country:"", vehicle:"", vehicleId:"", budget:"", notes:""});
-
-  useEffect(() => {
-    fetch("/api/vehicles?pageSize=3")
-      .then(async (response) => {
-        const text = await response.text();
-        const data = text ? JSON.parse(text) : {};
-        if (!response.ok) throw new Error(data.error || "Inventory is unavailable.");
-        return data as { vehicles: FeaturedVehicle[] };
-      })
-      .then((data) => setVehicles(data.vehicles ?? []))
-      .catch(() => setVehicles([]));
-  }, []);
 
   const configuredWhatsApp = process.env.NEXT_PUBLIC_WHATSAPP_NUMBER?.replace(/\D/g, "") || "";
   const whatsapp = /^\d{8,15}$/.test(configuredWhatsApp) ? configuredWhatsApp : "";
