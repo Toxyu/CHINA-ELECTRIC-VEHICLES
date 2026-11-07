@@ -79,9 +79,11 @@ export async function POST(req: Request) {
     safeMessages.push({ role: message.role, content: message.content });
   }
 
+  const fallbackReply = "Hello! I can help you source BYD, Neta and Zeekr electric vehicles from China to Kenya and other markets. What is your budget in KES, destination country and preferred model?";
   const key = process.env.GROQ_API_KEY;
   if (!key) {
-    return NextResponse.json({ reply: "The AI assistant is temporarily unavailable because its service connection is not configured. I can still help you prepare: what country are you importing to, and what is your approximate budget? You can also send an enquiry through the website form." });
+    console.error("GROQ_API_KEY is not configured; using assistant fallback");
+    return NextResponse.json({ reply: fallbackReply });
   }
 
   const latestQuestion = safeMessages.filter((message) => message.role === "user").at(-1)?.content || "";
@@ -138,29 +140,33 @@ export async function POST(req: Request) {
       }),
       signal: AbortSignal.timeout(20_000),
     });
-  } catch {
-    return NextResponse.json({ error: "The AI service is temporarily unavailable. Please try again later." }, { status: 503 });
+  } catch (error) {
+    console.error("AI provider request failed", error);
+    return NextResponse.json({ reply: fallbackReply });
   }
 
   if (!upstream.ok) {
     console.error("AI provider returned", upstream.status);
-    return NextResponse.json({ error: "The AI service could not complete this request." }, { status: 502 });
+    return NextResponse.json({ reply: fallbackReply });
   }
 
   let data: unknown;
   try {
     data = await upstream.json();
-  } catch {
-    return NextResponse.json({ error: "The AI service returned an invalid response." }, { status: 502 });
+  } catch (error) {
+    console.error("AI provider returned invalid JSON", error);
+    return NextResponse.json({ reply: fallbackReply });
   }
 
   if (!isRecord(data) || !Array.isArray(data.choices) || !isRecord(data.choices[0])) {
-    return NextResponse.json({ error: "The AI service returned an invalid response." }, { status: 502 });
+    console.error("AI provider response did not contain a choice");
+    return NextResponse.json({ reply: fallbackReply });
   }
 
   const message = data.choices[0].message;
   if (!isRecord(message) || typeof message.content !== "string") {
-    return NextResponse.json({ error: "The AI service returned an invalid response." }, { status: 502 });
+    console.error("AI provider response did not contain message content");
+    return NextResponse.json({ reply: fallbackReply });
   }
 
   return NextResponse.json({ reply: message.content });
