@@ -4,6 +4,7 @@ import "./components.css";
 import "./operations.css";
 
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.APP_URL || "https://china-ev.vercel.app"),
   title: "E.V CHINA GLOBAL | Source Electric Vehicles from China",
   description: "A sourcing partner concept connecting global buyers with electric vehicles from China. Request a vehicle and receive a tailored sourcing conversation.",
   applicationName: "E.V China Global",
